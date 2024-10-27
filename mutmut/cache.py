@@ -10,7 +10,6 @@ from itertools import groupby, zip_longest
 from os.path import join, dirname
 from typing import Tuple
 
-
 from junit_xml import TestSuite, TestCase, to_xml_report_string
 from pony.orm import Database, Required, db_session, Set, Optional, select, \
     PrimaryKey, RowNotFound, ERDiagramError, OperationalError
@@ -21,7 +20,6 @@ from mutmut import MUTANT_STATUSES, BAD_TIMEOUT, OK_SUSPICIOUS, BAD_SURVIVED, SK
 db = Database()
 
 current_db_version = 4
-
 
 NO_TESTS_FOUND = 'NO TESTS FOUND'
 
@@ -49,6 +47,12 @@ class Mutant(db.Entity):
     index = Required(int)
     tested_against_hash = Optional(str, autostrip=False)
     status = Required(str, autostrip=False)  # really an enum of mutant_statuses
+    mutant_type = Optional('MutantType')
+
+
+class MutantType(db.Entity):
+    mutant = Required(Mutant)
+    mutation_type = Required(str, autostrip=False)
 
 
 def init_db(f):
@@ -86,6 +90,7 @@ def init_db(f):
                 v.value = str(current_db_version)
 
         return f(*args, **kwargs)
+
     return wrapper
 
 
@@ -204,7 +209,6 @@ def get_unified_diff(argument, dict_synonyms, update_cache=True, source=None):
 
 
 def _get_unified_diff(source, filename, mutation_id, dict_synonyms, update_cache):
-
     if update_cache:
         update_line_numbers(filename)
 
@@ -222,7 +226,8 @@ def _get_unified_diff(source, filename, mutation_id, dict_synonyms, update_cache
         return ""
 
     output = ""
-    for line in unified_diff(source.split('\n'), mutated_source.split('\n'), fromfile=filename, tofile=filename, lineterm=''):
+    for line in unified_diff(source.split('\n'), mutated_source.split('\n'), fromfile=filename, tofile=filename,
+                             lineterm=''):
         output += line + "\n"
     return output
 
@@ -238,11 +243,13 @@ def create_junitxml_report(dict_synonyms, suspicious_policy, untested_policy):
     mutant_list = list(select(x for x in Mutant))
     for filename, mutants in groupby(mutant_list, key=lambda x: x.line.sourcefile.filename):
         for mutant in mutants:
-            tc = TestCase("Mutant #{}".format(mutant.id), file=filename, line=mutant.line.line_number + 1, stdout=mutant.line.line)
+            tc = TestCase("Mutant #{}".format(mutant.id), file=filename, line=mutant.line.line_number + 1,
+                          stdout=mutant.line.line)
             if mutant.status == BAD_SURVIVED:
                 tc.add_failure_info(message=mutant.status, output=get_unified_diff(mutant.id, dict_synonyms))
             if mutant.status == BAD_TIMEOUT:
-                tc.add_error_info(message=mutant.status, error_type="timeout", output=get_unified_diff(mutant.id, dict_synonyms))
+                tc.add_error_info(message=mutant.status, error_type="timeout",
+                                  output=get_unified_diff(mutant.id, dict_synonyms))
             if mutant.status == OK_SUSPICIOUS:
                 if suspicious_policy != 'ignore':
                     func = getattr(tc, 'add_{}_info'.format(suspicious_policy))
@@ -268,9 +275,11 @@ def create_html_report(dict_synonyms, directory):
     with open(join(directory, 'index.html'), 'w') as index_file:
         index_file.write('<h1>Mutation testing report</h1>')
 
-        index_file.write('Killed %s out of %s mutants' % (len([x for x in mutants if x.status == OK_KILLED]), len(mutants)))
+        index_file.write(
+            'Killed %s out of %s mutants' % (len([x for x in mutants if x.status == OK_KILLED]), len(mutants)))
 
-        index_file.write('<table><thead><tr><th>File</th><th>Total</th><th>Skipped</th><th>Killed</th><th>% killed</th><th>Survived</th></thead>')
+        index_file.write(
+            '<table><thead><tr><th>File</th><th>Total</th><th>Skipped</th><th>Killed</th><th>% killed</th><th>Survived</th></thead>')
 
         for filename, mutants in groupby(mutants, key=lambda x: x.line.sourcefile.filename):
             report_filename = join(directory, filename)
@@ -293,20 +302,23 @@ def create_html_report(dict_synonyms, directory):
                 killed = len(mutants_by_status[OK_KILLED])
                 f.write('Killed %s out of %s mutants' % (killed, len(mutants)))
 
-                index_file.write('<tr><td><a href="%s.html">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%.2f</td><td>%s</td>' % (
-                    filename,
-                    filename,
-                    len(mutants),
-                    len(mutants_by_status[SKIPPED]),
-                    killed,
-                    (killed / len(mutants) * 100),
-                    len(mutants_by_status[BAD_SURVIVED]),
-                ))
+                index_file.write(
+                    '<tr><td><a href="%s.html">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%.2f</td><td>%s</td>' % (
+                        filename,
+                        filename,
+                        len(mutants),
+                        len(mutants_by_status[SKIPPED]),
+                        killed,
+                        (killed / len(mutants) * 100),
+                        len(mutants_by_status[BAD_SURVIVED]),
+                    ))
 
                 def print_diffs(status):
                     mutants = mutants_by_status[status]
                     for mutant in sorted(mutants, key=lambda m: m.id):
-                        diff = _get_unified_diff(source, filename, RelativeMutationID(mutant.line.line, mutant.index, mutant.line.line_number), dict_synonyms, update_cache=False)
+                        diff = _get_unified_diff(source, filename, RelativeMutationID(mutant.line.line, mutant.index,
+                                                                                      mutant.line.line_number),
+                                                 dict_synonyms, update_cache=False)
                         f.write('<h3>Mutant %s</h3>' % mutant.id)
                         f.write('<pre>%s</pre>' % diff)
 
@@ -424,6 +436,20 @@ def register_mutants(mutations_by_file):
 
 @init_db
 @db_session
+def register_mutant_types(mutant_types_by_file):
+    for filename, mutant_types in mutant_types_by_file.items():
+        sourcefile = SourceFile.get(filename=filename)
+        for mutant_type in mutant_types:
+            line = Line.get(sourcefile=sourcefile, line=mutant_type.line, line_number=mutant_type.line_number)
+            mutant = Mutant.get(line=line, index=mutant_type.index)
+            if mutant is None:
+                print('WARNING mutant not found for mutant type', mutant_type)
+                continue
+            get_or_create(MutantType, mutant=mutant, mutation_type=mutant_type.mutation_type)
+
+
+@init_db
+@db_session
 def update_mutant_status(file_to_mutate, mutation_id, status, tests_hash):
     sourcefile = SourceFile.get(filename=file_to_mutate)
     line = Line.get(sourcefile=sourcefile, line=mutation_id.line, line_number=mutation_id.line_number)
@@ -444,7 +470,8 @@ def get_cached_mutation_statuses(filename, mutations, hash_of_tests):
 
     for mutation_id in mutations:
         if mutation_id.line not in line_obj_by_line:
-            line_obj_by_line[mutation_id.line] = Line.get(sourcefile=sourcefile, line=mutation_id.line, line_number=mutation_id.line_number)
+            line_obj_by_line[mutation_id.line] = Line.get(sourcefile=sourcefile, line=mutation_id.line,
+                                                          line_number=mutation_id.line_number)
         line = line_obj_by_line[mutation_id.line]
         assert line
         mutant = Mutant.get(line=line, index=mutation_id.index)

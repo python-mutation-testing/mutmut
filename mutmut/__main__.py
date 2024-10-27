@@ -417,6 +417,7 @@ Legend for output:
             covered_lines_by_filename = read_patch_data(use_patch_file)
 
     mutations_by_file = {}
+    mutation_types_by_file = {}
 
     paths_to_exclude = paths_to_exclude or ''
     if paths_to_exclude:
@@ -445,7 +446,7 @@ Legend for output:
         rerun_all=rerun_all
     )
 
-    parse_run_argument(argument, config, dict_synonyms, mutations_by_file, paths_to_exclude, paths_to_mutate, tests_dirs)
+    parse_run_argument(argument, config, dict_synonyms, mutations_by_file, paths_to_exclude, paths_to_mutate, tests_dirs, mutation_types_by_file)
 
     config.total = sum(len(mutations) for mutations in mutations_by_file.values())
 
@@ -466,14 +467,14 @@ Legend for output:
         close_active_queues()
 
 
-def parse_run_argument(argument, config, dict_synonyms, mutations_by_file, paths_to_exclude, paths_to_mutate, tests_dirs):
+def parse_run_argument(argument, config, dict_synonyms, mutations_by_file, paths_to_exclude, paths_to_mutate, tests_dirs, mutation_types_by_file):
     if argument is None:
         for path in paths_to_mutate:
             for filename in python_source_files(path, tests_dirs, paths_to_exclude):
                 if filename.startswith('test_') or filename.endswith('__tests.py'):
                     continue
                 update_line_numbers(filename)
-                add_mutations_by_file(mutations_by_file, filename, dict_synonyms, config)
+                add_mutations_by_file(mutations_by_file, filename, dict_synonyms, config, mutation_types_by_file)
     else:
         try:
             int(argument)
@@ -482,7 +483,7 @@ def parse_run_argument(argument, config, dict_synonyms, mutations_by_file, paths
             if not os.path.exists(filename):
                 raise click.BadArgumentUsage('The run command takes either an integer that is the mutation id or a path to a file to mutate')
             update_line_numbers(filename)
-            add_mutations_by_file(mutations_by_file, filename, dict_synonyms, config)
+            add_mutations_by_file(mutations_by_file, filename, dict_synonyms, config, mutation_types_by_file)
             return
 
         filename, mutation_id = filename_and_mutation_id_from_pk(int(argument))

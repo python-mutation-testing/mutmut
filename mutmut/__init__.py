@@ -52,6 +52,14 @@ class RelativeMutationID:
     filename: Optional[str] = field(default=None, compare=False, hash=False)
 
 
+@dataclass
+class MutationTypeID:
+    line: str
+    index: int
+    line_number: int
+    mutation_type: Optional[str] = field(default=None, compare=False, hash=False)
+
+
 ALL = RelativeMutationID(filename='%all%', line='%all%', index=-1, line_number=-1)
 
 
@@ -514,6 +522,7 @@ class Context:
         self._path_by_line = None
         self.config = config
         self.skip = False
+        self.performed_mutation_types = []
 
     def exclude_line(self):
         return self.current_line_index in self.pragma_no_mutate_lines or should_exclude(context=self, config=self.config)
@@ -652,6 +661,9 @@ def mutate_node(node, context: Context):
                         mutmut_config.pre_mutation_ast(context=context)
                     if context.should_mutate(node):
                         context.performed_mutation_ids.append(context.mutation_id_of_current_index)
+
+                        current_mutation_id = context.mutation_id_of_current_index
+                        context.performed_mutation_types.append(MutationTypeID(line=current_mutation_id.line, index=current_mutation_id.index, mutation_type=node.type, line_number=current_mutation_id.line_number))
                         setattr(node, key, new)
                     context.index += 1
                 # this is just an optimization to stop early
@@ -1230,6 +1242,7 @@ def add_mutations_by_file(
     filename: str,
     dict_synonyms: List[str],
     config: Optional[Config],
+    mutation_types_by_file: Dict[str, List[MutationTypeID]],
 ):
     with open(filename) as f:
         source = f.read()
@@ -1242,9 +1255,11 @@ def add_mutations_by_file(
 
     try:
         mutations_by_file[filename] = list_mutations(context)
-        from mutmut.cache import register_mutants
+        mutation_types_by_file[filename] = context.performed_mutation_types
+        from mutmut.cache import register_mutants, register_mutant_types
 
         register_mutants(mutations_by_file)
+        register_mutant_types(mutation_types_by_file)
     except Exception as e:
         raise RuntimeError(
             'Failed while creating mutations for {}, for line "{}"'.format(
